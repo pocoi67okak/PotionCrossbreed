@@ -23,17 +23,17 @@ public class AnvilListener implements Listener {
 
     private final PotionCrossbreed plugin;
     private final NamespacedKey CROSSBREED_KEY;
-    private final NamespacedKey POTION_LEVEL_KEY;
+    private final NamespacedKey CUSTOM_POTION_KEY;
 
-    // Максимальный уровень зелья
-    private static final int MAX_LEVEL = 3;
+    // Максимальный уровень эффекта (amplifier 2 = уровень 3)
+    private static final int MAX_AMPLIFIER = 2;
     // Стоимость в уровнях опыта
     private static final int EXP_COST = 5;
 
     public AnvilListener(PotionCrossbreed plugin) {
         this.plugin = plugin;
         this.CROSSBREED_KEY = new NamespacedKey(plugin, "crossbreed");
-        this.POTION_LEVEL_KEY = new NamespacedKey(plugin, "potion_level");
+        this.CUSTOM_POTION_KEY = new NamespacedKey(plugin, "custom_potion");
     }
 
     /**
@@ -43,6 +43,20 @@ public class AnvilListener implements Listener {
         if (item == null) return false;
         Material type = item.getType();
         return type == Material.POTION || type == Material.SPLASH_POTION || type == Material.LINGERING_POTION;
+    }
+
+    /**
+     * Проверяет, является ли зелье нашим кастомным
+     */
+    private boolean isCustomPotion(PotionMeta meta) {
+        return meta.getPersistentDataContainer().has(CUSTOM_POTION_KEY, PersistentDataType.BYTE);
+    }
+
+    /**
+     * Проверяет, является ли зелье скрещенным (несколько разных базовых типов)
+     */
+    private boolean isCrossbreedPotion(PotionMeta meta) {
+        return meta.getPersistentDataContainer().has(CROSSBREED_KEY, PersistentDataType.BYTE);
     }
 
     /**
@@ -63,17 +77,6 @@ public class AnvilListener implements Listener {
         }
 
         return effects;
-    }
-
-    /**
-     * Получает уровень зелья из PDC, или 1 по умолчанию
-     */
-    private int getPotionLevel(PotionMeta meta) {
-        PersistentDataContainer pdc = meta.getPersistentDataContainer();
-        if (pdc.has(POTION_LEVEL_KEY, PersistentDataType.INTEGER)) {
-            return pdc.get(POTION_LEVEL_KEY, PersistentDataType.INTEGER);
-        }
-        return 1;
     }
 
     /**
@@ -106,50 +109,35 @@ public class AnvilListener implements Listener {
 
         if (firstMeta == null || secondMeta == null) return;
 
-        int firstLevel = getPotionLevel(firstMeta);
-        int secondLevel = getPotionLevel(secondMeta);
-
-        // Уровни должны совпадать для скрещивания
-        if (firstLevel != secondLevel) {
-            return;
-        }
-
-        // Нельзя превысить максимальный уровень
-        int newLevel = firstLevel + 1;
-        if (newLevel > MAX_LEVEL) {
-            return;
-        }
-
         // Собираем эффекты обоих зелий
         List<PotionEffect> firstEffects = getAllEffects(firstMeta);
         List<PotionEffect> secondEffects = getAllEffects(secondMeta);
 
         if (firstEffects.isEmpty() && secondEffects.isEmpty()) return;
 
-        // Определяем, одинаковые ли зелья (по типам эффектов)
-        Set<PotionEffectType> firstTypes = getEffectTypes(firstEffects);
-        Set<PotionEffectType> secondTypes = getEffectTypes(secondEffects);
-        boolean isCrossbreed = !firstTypes.equals(secondTypes);
-
-        // Создаём результат
-        ItemStack result = new ItemStack(first.getType());
-        PotionMeta resultMeta = (PotionMeta) result.getItemMeta();
-
-        // Убираем базовый тип, чтобы использовать только кастомные эффекты
-        resultMeta.setBasePotionType(null);
-
-        // Объединяем эффекты: если одинаковый тип — берём с бОльшим amplifier, увеличиваем на 1
+        // Объединяем эффекты
         Map<PotionEffectType, PotionEffect> mergedEffects = new LinkedHashMap<>();
+        boolean hasChange = false;
 
+        // Сначала добавляем все эффекты первого зелья
         for (PotionEffect effect : firstEffects) {
             mergedEffects.put(effect.getType(), effect);
         }
 
+        // Затем обрабатываем эффекты второго зелья
         for (PotionEffect effect : secondEffects) {
             if (mergedEffects.containsKey(effect.getType())) {
                 PotionEffect existing = mergedEffects.get(effect.getType());
-                // При скрещивании одинаковых эффектов — увеличиваем amplifier на 1
+                // Совпадающий эффект — увеличиваем amplifier на 1
                 int newAmplifier = Math.max(existing.getAmplifier(), effect.getAmplifier()) + 1;
+                // Ограничиваем максимальным уровнем
+                if (newAmplifier > MAX_AMPLIFIER) {
+                    newAmplifier = MAX_AMPLIFIER;
+                }
+                // Проверяем, есть ли реальное улучшение
+                if (newAmplifier > existing.getAmplifier() || newAmplifier > effect.getAmplifier()) {
+                    hasChange = true;
+                }
                 int newDuration = Math.max(existing.getDuration(), effect.getDuration());
                 mergedEffects.put(effect.getType(), new PotionEffect(
                         effect.getType(),
@@ -160,34 +148,63 @@ public class AnvilListener implements Listener {
                         existing.hasIcon()
                 ));
             } else {
-                // Разные эффекты — просто добавляем
+                // Новый эффект — добавляем
                 mergedEffects.put(effect.getType(), effect);
+                hasChange = true;
             }
         }
+
+        // Если ничего не изменилось (все эффекты уже на максимуме) — не показываем результат
+        if (!hasChange) return;
+
+        // Определяем, является ли результат скрещенным
+        boolean firstIsCross = isCrossbreedPotion(firstMeta);
+        boolean secondIsCross = isCrossbreedPotion(secondMeta);
+        Set<PotionEffectType> firstTypes = getEffectTypes(firstEffects);
+        Set<PotionEffectType> secondTypes = getEffectTypes(secondEffects);
+        boolean isCrossbreed = firstIsCross || secondIsCross || !firstTypes.equals(secondTypes);
+
+        // Создаём результат
+        ItemStack result = new ItemStack(first.getType());
+        PotionMeta resultMeta = (PotionMeta) result.getItemMeta();
+
+        // Убираем базовый тип, чтобы использовать только кастомные эффекты
+        resultMeta.setBasePotionType(null);
 
         // Добавляем все объединённые эффекты
         for (PotionEffect effect : mergedEffects.values()) {
             resultMeta.addCustomEffect(effect, true);
         }
 
-        // Записываем уровень зелья в PDC
-        resultMeta.getPersistentDataContainer().set(POTION_LEVEL_KEY, PersistentDataType.INTEGER, newLevel);
+        // Помечаем как наше кастомное зелье
+        resultMeta.getPersistentDataContainer().set(CUSTOM_POTION_KEY, PersistentDataType.BYTE, (byte) 1);
 
-        // Устанавливаем название
+        // Устанавливаем название и лор
         if (isCrossbreed) {
             resultMeta.getPersistentDataContainer().set(CROSSBREED_KEY, PersistentDataType.BYTE, (byte) 1);
             resultMeta.setDisplayName(ChatColor.LIGHT_PURPLE + "Скрещенное зелье");
         } else {
-            // Одинаковые зелья — добавляем уровень к названию
+            // Одинаковые зелья — название с уровнем по максимальному эффекту
             String baseName = getPotionBaseName(firstMeta, firstEffects);
-            resultMeta.setDisplayName(ChatColor.AQUA + baseName + " " + toRoman(newLevel));
+            int maxAmp = 0;
+            for (PotionEffect effect : mergedEffects.values()) {
+                maxAmp = Math.max(maxAmp, effect.getAmplifier());
+            }
+            resultMeta.setDisplayName(ChatColor.AQUA + baseName + " " + toRoman(maxAmp + 1));
         }
 
-        // Добавляем лор с информацией
+        // Лор — список эффектов с уровнями
         List<String> lore = new ArrayList<>();
-        lore.add(ChatColor.GRAY + "Уровень: " + toRoman(newLevel));
         if (isCrossbreed) {
             lore.add(ChatColor.DARK_PURPLE + "Скрещенное");
+        }
+        lore.add("");
+        lore.add(ChatColor.GRAY + "Эффекты:");
+        for (PotionEffect effect : mergedEffects.values()) {
+            String effectName = formatEffectName(effect.getType());
+            String level = toRoman(effect.getAmplifier() + 1);
+            String durationStr = formatDuration(effect.getDuration());
+            lore.add(ChatColor.WHITE + " " + effectName + " " + level + ChatColor.GRAY + " (" + durationStr + ")");
         }
         resultMeta.setLore(lore);
 
@@ -212,8 +229,8 @@ public class AnvilListener implements Listener {
         PotionMeta meta = (PotionMeta) result.getItemMeta();
         if (meta == null) return;
 
-        // Проверяем, что это наш результат (есть PDC ключ уровня)
-        if (!meta.getPersistentDataContainer().has(POTION_LEVEL_KEY, PersistentDataType.INTEGER)) {
+        // Проверяем, что это наш результат
+        if (!meta.getPersistentDataContainer().has(CUSTOM_POTION_KEY, PersistentDataType.BYTE)) {
             return;
         }
 
@@ -247,12 +264,29 @@ public class AnvilListener implements Listener {
     }
 
     /**
+     * Форматирует длительность из тиков в мм:сс
+     */
+    private String formatDuration(int ticks) {
+        if (ticks < 0) return "∞";
+        int totalSeconds = ticks / 20;
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        return String.format("%d:%02d", minutes, seconds);
+    }
+
+    /**
      * Получает красивое имя зелья на основе эффектов
      */
     private String getPotionBaseName(PotionMeta meta, List<PotionEffect> effects) {
         PotionType baseType = meta.getBasePotionType();
         if (baseType != null) {
             return formatPotionTypeName(baseType);
+        }
+
+        // Для кастомных зелий — берём имя по первому эффекту
+        if (meta.hasCustomEffects() && !meta.getCustomEffects().isEmpty()) {
+            String effectName = formatEffectName(meta.getCustomEffects().get(0).getType());
+            return "Зелье " + effectName;
         }
 
         if (!effects.isEmpty()) {
@@ -342,43 +376,43 @@ public class AnvilListener implements Listener {
         POTION_NAMES.put("infested", "Зелье заражения");
     }
 
-    // Русские названия эффектов (на случай если нет базового типа)
+    // Русские названия эффектов
     private static final Map<String, String> EFFECT_NAMES = new HashMap<>();
     static {
-        EFFECT_NAMES.put("speed", "скорости");
-        EFFECT_NAMES.put("slowness", "замедления");
-        EFFECT_NAMES.put("haste", "спешки");
-        EFFECT_NAMES.put("mining_fatigue", "утомления");
-        EFFECT_NAMES.put("strength", "силы");
-        EFFECT_NAMES.put("instant_health", "лечения");
-        EFFECT_NAMES.put("instant_damage", "урона");
-        EFFECT_NAMES.put("jump_boost", "прыгучести");
-        EFFECT_NAMES.put("nausea", "тошноты");
-        EFFECT_NAMES.put("regeneration", "регенерации");
-        EFFECT_NAMES.put("resistance", "сопротивления");
-        EFFECT_NAMES.put("fire_resistance", "огнестойкости");
-        EFFECT_NAMES.put("water_breathing", "подводного дыхания");
-        EFFECT_NAMES.put("invisibility", "невидимости");
-        EFFECT_NAMES.put("blindness", "слепоты");
-        EFFECT_NAMES.put("night_vision", "ночного зрения");
-        EFFECT_NAMES.put("hunger", "голода");
-        EFFECT_NAMES.put("weakness", "слабости");
-        EFFECT_NAMES.put("poison", "отравления");
-        EFFECT_NAMES.put("wither", "иссушения");
-        EFFECT_NAMES.put("health_boost", "здоровья");
-        EFFECT_NAMES.put("absorption", "поглощения");
-        EFFECT_NAMES.put("saturation", "насыщения");
-        EFFECT_NAMES.put("glowing", "свечения");
-        EFFECT_NAMES.put("levitation", "левитации");
-        EFFECT_NAMES.put("luck", "удачи");
-        EFFECT_NAMES.put("unluck", "неудачи");
-        EFFECT_NAMES.put("slow_falling", "плавного падения");
-        EFFECT_NAMES.put("conduit_power", "силы потока");
-        EFFECT_NAMES.put("dolphins_grace", "грации дельфина");
-        EFFECT_NAMES.put("darkness", "тьмы");
-        EFFECT_NAMES.put("wind_charged", "ветра");
-        EFFECT_NAMES.put("weaving", "паутины");
-        EFFECT_NAMES.put("oozing", "слизи");
-        EFFECT_NAMES.put("infested", "заражения");
+        EFFECT_NAMES.put("speed", "Скорость");
+        EFFECT_NAMES.put("slowness", "Замедление");
+        EFFECT_NAMES.put("haste", "Спешка");
+        EFFECT_NAMES.put("mining_fatigue", "Утомление");
+        EFFECT_NAMES.put("strength", "Сила");
+        EFFECT_NAMES.put("instant_health", "Лечение");
+        EFFECT_NAMES.put("instant_damage", "Урон");
+        EFFECT_NAMES.put("jump_boost", "Прыгучесть");
+        EFFECT_NAMES.put("nausea", "Тошнота");
+        EFFECT_NAMES.put("regeneration", "Регенерация");
+        EFFECT_NAMES.put("resistance", "Сопротивление");
+        EFFECT_NAMES.put("fire_resistance", "Огнестойкость");
+        EFFECT_NAMES.put("water_breathing", "Подводное дыхание");
+        EFFECT_NAMES.put("invisibility", "Невидимость");
+        EFFECT_NAMES.put("blindness", "Слепота");
+        EFFECT_NAMES.put("night_vision", "Ночное зрение");
+        EFFECT_NAMES.put("hunger", "Голод");
+        EFFECT_NAMES.put("weakness", "Слабость");
+        EFFECT_NAMES.put("poison", "Отравление");
+        EFFECT_NAMES.put("wither", "Иссушение");
+        EFFECT_NAMES.put("health_boost", "Доп. здоровье");
+        EFFECT_NAMES.put("absorption", "Поглощение");
+        EFFECT_NAMES.put("saturation", "Насыщение");
+        EFFECT_NAMES.put("glowing", "Свечение");
+        EFFECT_NAMES.put("levitation", "Левитация");
+        EFFECT_NAMES.put("luck", "Удача");
+        EFFECT_NAMES.put("unluck", "Неудача");
+        EFFECT_NAMES.put("slow_falling", "Плавное падение");
+        EFFECT_NAMES.put("conduit_power", "Сила потока");
+        EFFECT_NAMES.put("dolphins_grace", "Грация дельфина");
+        EFFECT_NAMES.put("darkness", "Тьма");
+        EFFECT_NAMES.put("wind_charged", "Заряд ветра");
+        EFFECT_NAMES.put("weaving", "Паутина");
+        EFFECT_NAMES.put("oozing", "Слизь");
+        EFFECT_NAMES.put("infested", "Заражение");
     }
 }
