@@ -1,6 +1,6 @@
 name: PotionCrossbreed
 version: '${project.version}'
 main: com.potioncraft.potioncrossbreed.PotionCrossbreed
-api-version: '1.21.8'
+api-version: '1.21'
 description: Скрещивание зелий на наковальне
 author: saita

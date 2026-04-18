@@ -1,8 +1,6 @@
 package com.potioncraft.potioncrossbreed;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
+import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
@@ -177,29 +175,21 @@ public class AnvilListener implements Listener {
 
         // Устанавливаем название
         if (isCrossbreed) {
-            resultMeta.getPersistentDataContainer().set(CROSSBREED_KEY, PersistentDataType.BOOLEAN, true);
-            resultMeta.displayName(
-                    Component.text("Скрещенное зелье", NamedTextColor.LIGHT_PURPLE)
-                            .decoration(TextDecoration.ITALIC, false)
-            );
+            resultMeta.getPersistentDataContainer().set(CROSSBREED_KEY, PersistentDataType.BYTE, (byte) 1);
+            resultMeta.setDisplayName(ChatColor.LIGHT_PURPLE + "Скрещенное зелье");
         } else {
             // Одинаковые зелья — добавляем уровень к названию
             String baseName = getPotionBaseName(firstMeta, firstEffects);
-            resultMeta.displayName(
-                    Component.text(baseName + " " + toRoman(newLevel), NamedTextColor.AQUA)
-                            .decoration(TextDecoration.ITALIC, false)
-            );
+            resultMeta.setDisplayName(ChatColor.AQUA + baseName + " " + toRoman(newLevel));
         }
 
         // Добавляем лор с информацией
-        List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("Уровень: " + toRoman(newLevel), NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false));
+        List<String> lore = new ArrayList<>();
+        lore.add(ChatColor.GRAY + "Уровень: " + toRoman(newLevel));
         if (isCrossbreed) {
-            lore.add(Component.text("Скрещенное", NamedTextColor.DARK_PURPLE)
-                    .decoration(TextDecoration.ITALIC, false));
+            lore.add(ChatColor.DARK_PURPLE + "Скрещенное");
         }
-        resultMeta.lore(lore);
+        resultMeta.setLore(lore);
 
         result.setItemMeta(resultMeta);
 
@@ -232,33 +222,24 @@ public class AnvilListener implements Listener {
         // Проверяем уровень опыта
         if (player.getLevel() < EXP_COST) {
             event.setCancelled(true);
-            player.sendMessage(
-                    Component.text("✖ Недостаточно опыта! Нужно ", NamedTextColor.RED)
-                            .append(Component.text(EXP_COST + " уровней", NamedTextColor.GOLD))
-                            .append(Component.text(".", NamedTextColor.RED))
-            );
+            player.sendMessage(ChatColor.RED + "✖ Недостаточно опыта! Нужно " + ChatColor.GOLD + EXP_COST + " уровней" + ChatColor.RED + ".");
             return;
         }
 
         // Забираем опыт
         player.setLevel(player.getLevel() - EXP_COST);
-        player.sendMessage(
-                Component.text("✔ Зелья успешно скрещены! ", NamedTextColor.GREEN)
-                        .append(Component.text("-" + EXP_COST + " уровней", NamedTextColor.GOLD))
-        );
+        player.sendMessage(ChatColor.GREEN + "✔ Зелья успешно скрещены! " + ChatColor.GOLD + "-" + EXP_COST + " уровней");
     }
 
     /**
      * Получает красивое имя зелья на основе эффектов
      */
     private String getPotionBaseName(PotionMeta meta, List<PotionEffect> effects) {
-        // Пробуем получить имя из базового типа
         PotionType baseType = meta.getBasePotionType();
         if (baseType != null) {
             return formatPotionTypeName(baseType);
         }
 
-        // Если базового типа нет — генерируем из эффектов
         if (!effects.isEmpty()) {
             return "Зелье " + formatEffectName(effects.get(0).getType());
         }
@@ -297,90 +278,92 @@ public class AnvilListener implements Listener {
     }
 
     // Русские названия зелий
-    private static final Map<String, String> POTION_NAMES = Map.ofEntries(
-            Map.entry("speed", "Зелье скорости"),
-            Map.entry("long_speed", "Зелье скорости"),
-            Map.entry("strong_speed", "Зелье скорости"),
-            Map.entry("slowness", "Зелье замедления"),
-            Map.entry("long_slowness", "Зелье замедления"),
-            Map.entry("strong_slowness", "Зелье замедления"),
-            Map.entry("strength", "Зелье силы"),
-            Map.entry("long_strength", "Зелье силы"),
-            Map.entry("strong_strength", "Зелье силы"),
-            Map.entry("healing", "Зелье лечения"),
-            Map.entry("strong_healing", "Зелье лечения"),
-            Map.entry("harming", "Зелье урона"),
-            Map.entry("strong_harming", "Зелье урона"),
-            Map.entry("poison", "Зелье отравления"),
-            Map.entry("long_poison", "Зелье отравления"),
-            Map.entry("strong_poison", "Зелье отравления"),
-            Map.entry("regeneration", "Зелье регенерации"),
-            Map.entry("long_regeneration", "Зелье регенерации"),
-            Map.entry("strong_regeneration", "Зелье регенерации"),
-            Map.entry("fire_resistance", "Зелье огнестойкости"),
-            Map.entry("long_fire_resistance", "Зелье огнестойкости"),
-            Map.entry("water_breathing", "Зелье подводного дыхания"),
-            Map.entry("long_water_breathing", "Зелье подводного дыхания"),
-            Map.entry("invisibility", "Зелье невидимости"),
-            Map.entry("long_invisibility", "Зелье невидимости"),
-            Map.entry("night_vision", "Зелье ночного зрения"),
-            Map.entry("long_night_vision", "Зелье ночного зрения"),
-            Map.entry("leaping", "Зелье прыгучести"),
-            Map.entry("long_leaping", "Зелье прыгучести"),
-            Map.entry("strong_leaping", "Зелье прыгучести"),
-            Map.entry("slow_falling", "Зелье плавного падения"),
-            Map.entry("long_slow_falling", "Зелье плавного падения"),
-            Map.entry("swiftness", "Зелье скорости"),
-            Map.entry("long_swiftness", "Зелье скорости"),
-            Map.entry("strong_swiftness", "Зелье скорости"),
-            Map.entry("turtle_master", "Зелье черепашьей мощи"),
-            Map.entry("long_turtle_master", "Зелье черепашьей мощи"),
-            Map.entry("strong_turtle_master", "Зелье черепашьей мощи"),
-            Map.entry("weakness", "Зелье слабости"),
-            Map.entry("long_weakness", "Зелье слабости"),
-            Map.entry("luck", "Зелье удачи"),
-            Map.entry("wind_charged", "Зелье ветра"),
-            Map.entry("weaving", "Зелье паутины"),
-            Map.entry("oozing", "Зелье слизи"),
-            Map.entry("infested", "Зелье заражения")
-    );
+    private static final Map<String, String> POTION_NAMES = new HashMap<>();
+    static {
+        POTION_NAMES.put("speed", "Зелье скорости");
+        POTION_NAMES.put("long_speed", "Зелье скорости");
+        POTION_NAMES.put("strong_speed", "Зелье скорости");
+        POTION_NAMES.put("slowness", "Зелье замедления");
+        POTION_NAMES.put("long_slowness", "Зелье замедления");
+        POTION_NAMES.put("strong_slowness", "Зелье замедления");
+        POTION_NAMES.put("strength", "Зелье силы");
+        POTION_NAMES.put("long_strength", "Зелье силы");
+        POTION_NAMES.put("strong_strength", "Зелье силы");
+        POTION_NAMES.put("healing", "Зелье лечения");
+        POTION_NAMES.put("strong_healing", "Зелье лечения");
+        POTION_NAMES.put("harming", "Зелье урона");
+        POTION_NAMES.put("strong_harming", "Зелье урона");
+        POTION_NAMES.put("poison", "Зелье отравления");
+        POTION_NAMES.put("long_poison", "Зелье отравления");
+        POTION_NAMES.put("strong_poison", "Зелье отравления");
+        POTION_NAMES.put("regeneration", "Зелье регенерации");
+        POTION_NAMES.put("long_regeneration", "Зелье регенерации");
+        POTION_NAMES.put("strong_regeneration", "Зелье регенерации");
+        POTION_NAMES.put("fire_resistance", "Зелье огнестойкости");
+        POTION_NAMES.put("long_fire_resistance", "Зелье огнестойкости");
+        POTION_NAMES.put("water_breathing", "Зелье подводного дыхания");
+        POTION_NAMES.put("long_water_breathing", "Зелье подводного дыхания");
+        POTION_NAMES.put("invisibility", "Зелье невидимости");
+        POTION_NAMES.put("long_invisibility", "Зелье невидимости");
+        POTION_NAMES.put("night_vision", "Зелье ночного зрения");
+        POTION_NAMES.put("long_night_vision", "Зелье ночного зрения");
+        POTION_NAMES.put("leaping", "Зелье прыгучести");
+        POTION_NAMES.put("long_leaping", "Зелье прыгучести");
+        POTION_NAMES.put("strong_leaping", "Зелье прыгучести");
+        POTION_NAMES.put("slow_falling", "Зелье плавного падения");
+        POTION_NAMES.put("long_slow_falling", "Зелье плавного падения");
+        POTION_NAMES.put("swiftness", "Зелье скорости");
+        POTION_NAMES.put("long_swiftness", "Зелье скорости");
+        POTION_NAMES.put("strong_swiftness", "Зелье скорости");
+        POTION_NAMES.put("turtle_master", "Зелье черепашьей мощи");
+        POTION_NAMES.put("long_turtle_master", "Зелье черепашьей мощи");
+        POTION_NAMES.put("strong_turtle_master", "Зелье черепашьей мощи");
+        POTION_NAMES.put("weakness", "Зелье слабости");
+        POTION_NAMES.put("long_weakness", "Зелье слабости");
+        POTION_NAMES.put("luck", "Зелье удачи");
+        POTION_NAMES.put("wind_charged", "Зелье ветра");
+        POTION_NAMES.put("weaving", "Зелье паутины");
+        POTION_NAMES.put("oozing", "Зелье слизи");
+        POTION_NAMES.put("infested", "Зелье заражения");
+    }
 
     // Русские названия эффектов (на случай если нет базового типа)
-    private static final Map<String, String> EFFECT_NAMES = Map.ofEntries(
-            Map.entry("speed", "скорости"),
-            Map.entry("slowness", "замедления"),
-            Map.entry("haste", "спешки"),
-            Map.entry("mining_fatigue", "утомления"),
-            Map.entry("strength", "силы"),
-            Map.entry("instant_health", "лечения"),
-            Map.entry("instant_damage", "урона"),
-            Map.entry("jump_boost", "прыгучести"),
-            Map.entry("nausea", "тошноты"),
-            Map.entry("regeneration", "регенерации"),
-            Map.entry("resistance", "сопротивления"),
-            Map.entry("fire_resistance", "огнестойкости"),
-            Map.entry("water_breathing", "подводного дыхания"),
-            Map.entry("invisibility", "невидимости"),
-            Map.entry("blindness", "слепоты"),
-            Map.entry("night_vision", "ночного зрения"),
-            Map.entry("hunger", "голода"),
-            Map.entry("weakness", "слабости"),
-            Map.entry("poison", "отравления"),
-            Map.entry("wither", "иссушения"),
-            Map.entry("health_boost", "здоровья"),
-            Map.entry("absorption", "поглощения"),
-            Map.entry("saturation", "насыщения"),
-            Map.entry("glowing", "свечения"),
-            Map.entry("levitation", "левитации"),
-            Map.entry("luck", "удачи"),
-            Map.entry("unluck", "неудачи"),
-            Map.entry("slow_falling", "плавного падения"),
-            Map.entry("conduit_power", "силы потока"),
-            Map.entry("dolphins_grace", "грации дельфина"),
-            Map.entry("darkness", "тьмы"),
-            Map.entry("wind_charged", "ветра"),
-            Map.entry("weaving", "паутины"),
-            Map.entry("oozing", "слизи"),
-            Map.entry("infested", "заражения")
-    );
+    private static final Map<String, String> EFFECT_NAMES = new HashMap<>();
+    static {
+        EFFECT_NAMES.put("speed", "скорости");
+        EFFECT_NAMES.put("slowness", "замедления");
+        EFFECT_NAMES.put("haste", "спешки");
+        EFFECT_NAMES.put("mining_fatigue", "утомления");
+        EFFECT_NAMES.put("strength", "силы");
+        EFFECT_NAMES.put("instant_health", "лечения");
+        EFFECT_NAMES.put("instant_damage", "урона");
+        EFFECT_NAMES.put("jump_boost", "прыгучести");
+        EFFECT_NAMES.put("nausea", "тошноты");
+        EFFECT_NAMES.put("regeneration", "регенерации");
+        EFFECT_NAMES.put("resistance", "сопротивления");
+        EFFECT_NAMES.put("fire_resistance", "огнестойкости");
+        EFFECT_NAMES.put("water_breathing", "подводного дыхания");
+        EFFECT_NAMES.put("invisibility", "невидимости");
+        EFFECT_NAMES.put("blindness", "слепоты");
+        EFFECT_NAMES.put("night_vision", "ночного зрения");
+        EFFECT_NAMES.put("hunger", "голода");
+        EFFECT_NAMES.put("weakness", "слабости");
+        EFFECT_NAMES.put("poison", "отравления");
+        EFFECT_NAMES.put("wither", "иссушения");
+        EFFECT_NAMES.put("health_boost", "здоровья");
+        EFFECT_NAMES.put("absorption", "поглощения");
+        EFFECT_NAMES.put("saturation", "насыщения");
+        EFFECT_NAMES.put("glowing", "свечения");
+        EFFECT_NAMES.put("levitation", "левитации");
+        EFFECT_NAMES.put("luck", "удачи");
+        EFFECT_NAMES.put("unluck", "неудачи");
+        EFFECT_NAMES.put("slow_falling", "плавного падения");
+        EFFECT_NAMES.put("conduit_power", "силы потока");
+        EFFECT_NAMES.put("dolphins_grace", "грации дельфина");
+        EFFECT_NAMES.put("darkness", "тьмы");
+        EFFECT_NAMES.put("wind_charged", "ветра");
+        EFFECT_NAMES.put("weaving", "паутины");
+        EFFECT_NAMES.put("oozing", "слизи");
+        EFFECT_NAMES.put("infested", "заражения");
+    }
 }
