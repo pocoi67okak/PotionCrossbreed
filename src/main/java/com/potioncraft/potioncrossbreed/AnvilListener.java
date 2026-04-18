@@ -1,6 +1,7 @@
 package com.potioncraft.potioncrossbreed;
 
 import org.bukkit.ChatColor;
+import org.bukkit.Color;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
@@ -9,6 +10,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.inventory.AnvilInventory;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -176,6 +178,16 @@ public class AnvilListener implements Listener {
             resultMeta.addCustomEffect(effect, true);
         }
 
+        // Скрываем ванильный тултип "При применении:" — показываем только наш лор
+        resultMeta.addItemFlags(ItemFlag.HIDE_ADDITIONAL_TOOLTIP);
+
+        // Устанавливаем кастомный цвет зелья
+        if (isCrossbreed) {
+            resultMeta.setColor(Color.fromRGB(180, 60, 255)); // Фиолетовый для скрещенных
+        } else {
+            resultMeta.setColor(Color.fromRGB(60, 200, 255)); // Голубой для улучшенных
+        }
+
         // Помечаем как наше кастомное зелье
         resultMeta.getPersistentDataContainer().set(CUSTOM_POTION_KEY, PersistentDataType.BYTE, (byte) 1);
 
@@ -193,18 +205,20 @@ public class AnvilListener implements Listener {
             resultMeta.setDisplayName(ChatColor.AQUA + baseName + " " + toRoman(maxAmp + 1));
         }
 
-        // Лор — список эффектов с уровнями
+        // Лор — чистый список эффектов с уровнями и длительностью
         List<String> lore = new ArrayList<>();
         if (isCrossbreed) {
-            lore.add(ChatColor.DARK_PURPLE + "Скрещенное");
+            lore.add(ChatColor.DARK_PURPLE + "✦ Скрещенное");
+        } else {
+            lore.add(ChatColor.AQUA + "✦ Улучшенное");
         }
         lore.add("");
-        lore.add(ChatColor.GRAY + "Эффекты:");
+        lore.add(ChatColor.GRAY + "При применении:");
         for (PotionEffect effect : mergedEffects.values()) {
             String effectName = formatEffectName(effect.getType());
             String level = toRoman(effect.getAmplifier() + 1);
             String durationStr = formatDuration(effect.getDuration());
-            lore.add(ChatColor.WHITE + " " + effectName + " " + level + ChatColor.GRAY + " (" + durationStr + ")");
+            lore.add(ChatColor.BLUE + " " + effectName + " " + level + ChatColor.DARK_GRAY + " - " + ChatColor.GRAY + durationStr);
         }
         resultMeta.setLore(lore);
 
