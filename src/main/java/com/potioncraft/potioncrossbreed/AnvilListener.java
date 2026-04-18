@@ -199,7 +199,7 @@ public class AnvilListener implements Listener {
     }
 
     /**
-     * Обработка клика по результату наковальни — забрать опыт
+     * Обработка клика по результату наковальни — вручную выдаём предмет
      */
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
@@ -226,8 +226,23 @@ public class AnvilListener implements Listener {
             return;
         }
 
+        // Отменяем стандартное поведение — Spigot не даёт забрать кастомный результат
+        event.setCancelled(true);
+
+        // Копируем результат до очистки
+        ItemStack resultCopy = result.clone();
+
+        // Очищаем слоты наковальни
+        anvilInv.setItem(0, null);
+        anvilInv.setItem(1, null);
+        anvilInv.setItem(2, null);
+
         // Забираем опыт
         player.setLevel(player.getLevel() - EXP_COST);
+
+        // Выдаём результат на курсор игрока
+        player.setItemOnCursor(resultCopy);
+
         player.sendMessage(ChatColor.GREEN + "✔ Зелья успешно скрещены! " + ChatColor.GOLD + "-" + EXP_COST + " уровней");
     }
 
