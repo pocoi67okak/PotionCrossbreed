@@ -20,6 +20,8 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.potion.PotionType;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class AnvilListener implements Listener {
 
@@ -115,15 +117,21 @@ public class AnvilListener implements Listener {
         List<PotionEffect> firstEffects = getAllEffects(firstMeta);
         List<PotionEffect> secondEffects = getAllEffects(secondMeta);
 
-        if (firstEffects.isEmpty() && secondEffects.isEmpty()) return;
+        // Парсим бонусные длительности из лора входных зелий (AuraSkills и т.д.)
+        Map<PotionEffectType, Integer> firstBonuses = parseLoreBonusDurations(first);
+        Map<PotionEffectType, Integer> secondBonuses = parseLoreBonusDurations(second);
 
         // Объединяем эффекты
         Map<PotionEffectType, PotionEffect> mergedEffects = new LinkedHashMap<>();
+        Map<PotionEffectType, Integer> mergedBonuses = new LinkedHashMap<>();
         boolean hasChange = false;
 
         // Сначала добавляем все эффекты первого зелья
         for (PotionEffect effect : firstEffects) {
             mergedEffects.put(effect.getType(), effect);
+            if (firstBonuses.containsKey(effect.getType())) {
+                mergedBonuses.put(effect.getType(), firstBonuses.get(effect.getType()));
+            }
         }
 
         // Затем обрабатываем эффекты второго зелья
@@ -140,6 +148,7 @@ public class AnvilListener implements Listener {
                 if (newAmplifier > existing.getAmplifier() || newAmplifier > effect.getAmplifier()) {
                     hasChange = true;
                 }
+                // Берём большую базовую длительность
                 int newDuration = Math.max(existing.getDuration(), effect.getDuration());
                 mergedEffects.put(effect.getType(), new PotionEffect(
                         effect.getType(),
@@ -149,9 +158,16 @@ public class AnvilListener implements Listener {
                         existing.hasParticles(),
                         existing.hasIcon()
                 ));
+                // Берём больший бонус из обоих зелий
+                int existingBonus = mergedBonuses.getOrDefault(effect.getType(), 0);
+                int secondBonus = secondBonuses.getOrDefault(effect.getType(), 0);
+                mergedBonuses.put(effect.getType(), Math.max(existingBonus, secondBonus));
             } else {
                 // Новый эффект — добавляем
                 mergedEffects.put(effect.getType(), effect);
+                if (secondBonuses.containsKey(effect.getType())) {
+                    mergedBonuses.put(effect.getType(), secondBonuses.get(effect.getType()));
+                }
                 hasChange = true;
             }
         }
@@ -173,8 +189,22 @@ public class AnvilListener implements Listener {
         // Убираем базовый тип, чтобы использовать только кастомные эффекты
         resultMeta.setBasePotionType(null);
 
-        // Добавляем все объединённые эффекты
-        for (PotionEffect effect : mergedEffects.values()) {
+        // Добавляем все объединённые эффекты (с бонусной длительностью)
+        for (Map.Entry<PotionEffectType, PotionEffect> entry : mergedEffects.entrySet()) {
+            PotionEffect effect = entry.getValue();
+            int bonus = mergedBonuses.getOrDefault(entry.getKey(), 0);
+            if (bonus > 0) {
+                // Прибавляем бонусное время к базовому
+                effect = new PotionEffect(
+                        effect.getType(),
+                        effect.getDuration() + bonus,
+                        effect.getAmplifier(),
+                        effect.isAmbient(),
+                        effect.hasParticles(),
+                        effect.hasIcon()
+                );
+                mergedEffects.put(entry.getKey(), effect);
+            }
             resultMeta.addCustomEffect(effect, true);
         }
 
@@ -205,7 +235,7 @@ public class AnvilListener implements Listener {
             resultMeta.setDisplayName(ChatColor.AQUA + baseName + " " + toRoman(maxAmp + 1));
         }
 
-        // Лор — чистый список эффектов с уровнями и длительностью
+        // Лор — чистый список эффектов с уровнями и полной длительностью (ваниль + бонус)
         List<String> lore = new ArrayList<>();
         if (isCrossbreed) {
             lore.add(ChatColor.DARK_PURPLE + "✦ Скрещенное");
@@ -275,6 +305,67 @@ public class AnvilListener implements Listener {
         player.setItemOnCursor(resultCopy);
 
         player.sendMessage(ChatColor.GREEN + "✔ Зелья успешно скрещены! " + ChatColor.GOLD + "-" + EXP_COST + " уровней");
+    }
+
+    /**
+     * Парсит бонусные длительности из лора зелья (от AuraSkills и др. плагинов)
+     * Ищет паттерны (+MM:SS) или (+H:MM:SS) и связывает их с эффектами
+     */
+    private static final Pattern BONUS_DURATION_PATTERN = Pattern.compile("\\(\\+(\\d+):(\\d{2})\\)");
+    private static final Pattern BONUS_DURATION_HOURS_PATTERN = Pattern.compile("\\(\\+(\\d+):(\\d{2}):(\\d{2})\\)");
+
+    private Map<PotionEffectType, Integer> parseLoreBonusDurations(ItemStack potion) {
+        Map<PotionEffectType, Integer> bonuses = new LinkedHashMap<>();
+        if (potion == null || !potion.hasItemMeta()) return bonuses;
+
+        List<String> lore = potion.getItemMeta().getLore();
+        if (lore == null || lore.isEmpty()) return bonuses;
+
+        // Создаём обратную карту: русское название → PotionEffectType
+        Map<String, PotionEffectType> reverseEffectNames = new HashMap<>();
+        for (Map.Entry<String, String> entry : EFFECT_NAMES.entrySet()) {
+            PotionEffectType effectType = PotionEffectType.getByKey(
+                    org.bukkit.NamespacedKey.minecraft(entry.getKey()));
+            if (effectType != null) {
+                reverseEffectNames.put(entry.getValue().toLowerCase(), effectType);
+            }
+        }
+
+        PotionEffectType lastFoundEffect = null;
+
+        for (String line : lore) {
+            String stripped = ChatColor.stripColor(line).trim();
+
+            // Пробуем найти название эффекта в строке
+            for (Map.Entry<String, PotionEffectType> entry : reverseEffectNames.entrySet()) {
+                if (stripped.toLowerCase().contains(entry.getKey().toLowerCase())) {
+                    lastFoundEffect = entry.getValue();
+                    break;
+                }
+            }
+
+            // Проверяем на бонус длительности (+H:MM:SS)
+            Matcher hoursMatcher = BONUS_DURATION_HOURS_PATTERN.matcher(stripped);
+            if (hoursMatcher.find() && lastFoundEffect != null) {
+                int hours = Integer.parseInt(hoursMatcher.group(1));
+                int minutes = Integer.parseInt(hoursMatcher.group(2));
+                int seconds = Integer.parseInt(hoursMatcher.group(3));
+                int bonusTicks = (hours * 3600 + minutes * 60 + seconds) * 20;
+                bonuses.put(lastFoundEffect, bonusTicks);
+                continue;
+            }
+
+            // Проверяем на бонус длительности (+MM:SS)
+            Matcher matcher = BONUS_DURATION_PATTERN.matcher(stripped);
+            if (matcher.find() && lastFoundEffect != null) {
+                int minutes = Integer.parseInt(matcher.group(1));
+                int seconds = Integer.parseInt(matcher.group(2));
+                int bonusTicks = (minutes * 60 + seconds) * 20;
+                bonuses.put(lastFoundEffect, bonusTicks);
+            }
+        }
+
+        return bonuses;
     }
 
     /**
